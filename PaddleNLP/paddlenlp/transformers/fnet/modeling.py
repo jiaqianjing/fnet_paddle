@@ -258,7 +258,7 @@ class FNetOutput(nn.Layer):
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
 
 
