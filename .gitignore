@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+checkpoint/
 .vscode
 pretrained_model/
 __pycache__/

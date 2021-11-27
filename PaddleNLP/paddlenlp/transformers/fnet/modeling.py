@@ -27,8 +27,9 @@ import paddle.nn.functional as F
 from ..model_utils import PretrainedModel, register_base_model
 
 __all__ = [
-    'FNetModel',
+    "FNetModel",
     "FNetPreTrainedModel",
+    "FNetForSequenceClassification"
 ]
 
 
@@ -437,7 +438,7 @@ class FNetForSequenceClassification(FNetPreTrainedModel):
 
             """
 
-        _, pooled_output = self.FNet(input_ids,
+        _, pooled_output = self.fnet(input_ids,
                                      token_type_ids=token_type_ids,
                                      position_ids=position_ids)
 
