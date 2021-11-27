@@ -27,8 +27,8 @@ import paddle.nn.functional as F
 from ..model_utils import PretrainedModel, register_base_model
 
 __all__ = [
-    'FnetModel',
-    "FnetPretrainedModel",
+    'FNetModel',
+    "FNetPreTrainedModel",
 ]
 
 
@@ -147,6 +147,7 @@ class FNetEmbeddings(nn.Layer):
     """Construct the embeddings from word, position and token_type embeddings."""
     def __init__(self,
                  vocab_size,
+                 pad_token_id,
                  hidden_size=768,
                  hidden_dropout_prob=0.1,
                  max_position_embeddings=512,
@@ -154,7 +155,7 @@ class FNetEmbeddings(nn.Layer):
         super(FNetEmbeddings, self).__init__()
         self.word_embeddings = nn.Embedding(vocab_size,
                                             hidden_size,
-                                            padding_idx=self.pad_token_id)
+                                            padding_idx=pad_token_id)
         self.position_embeddings = nn.Embedding(max_position_embeddings,
                                                 hidden_size)
         self.token_type_embeddings = nn.Embedding(type_vocab_size, hidden_size)
@@ -214,7 +215,7 @@ class FNetIntermediate(nn.Layer):
         return hidden_states
 
 
-class FNetBasicOutput(nn.Module):
+class FNetBasicOutput(nn.Layer):
     def __init__(self, hidden_size):
         super().__init__()
         self.layer_norm = nn.LayerNorm(hidden_size)
@@ -264,6 +265,9 @@ class FNetOutput(nn.Layer):
 class FNetLayer(nn.Layer):
     def __init__(self, hidden_size, intermediate_size, hidden_act,
                  hidden_dropout_prob):
+        self._config = locals()
+        self._config.pop("self")
+        self._config.pop("__class__", None)  # py3
         super().__init__()
         self.fourier = FNetFourierTransform(hidden_size)
         self.intermediate = FNetIntermediate(hidden_size, intermediate_size,
@@ -342,7 +346,7 @@ class FNetModel(FNetPreTrainedModel):
         super(FNetModel, self).__init__()
         self.pad_token_id = pad_token_id
         self.initializer_range = initializer_range
-        self.embeddings = FNetEmbeddings(vocab_size, hidden_size,
+        self.embeddings = FNetEmbeddings(vocab_size, pad_token_id, hidden_size,
                                          hidden_dropout_prob,
                                          max_position_embeddings,
                                          type_vocab_size)
