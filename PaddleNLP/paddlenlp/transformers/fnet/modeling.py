@@ -356,6 +356,7 @@ class FNetModel(FNetPreTrainedModel):
                                   hidden_dropout_prob)
         self.encoder = FNetEncoder(encoder_layer, num_hidden_layers)
         self.pooler = FNetPooler(hidden_size) if add_pooling_layer else None
+        self.apply(self.init_weights)
 
     def forward(self,
                 input_ids,
