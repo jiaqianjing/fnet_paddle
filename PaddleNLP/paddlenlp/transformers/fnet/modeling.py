@@ -54,7 +54,7 @@ def swish(x):
 
 def gelu_new(x):
     """
-    Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT). Also see
+    Implementation of the GELU activation function currently in Google FNet repo (identical to OpenAI GPT). Also see
     the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
     """
     return 0.5 * x * (1.0 + paddle.tanh(
@@ -388,3 +388,59 @@ class FNetModel(FNetPreTrainedModel):
             return encoder_outputs, pooled_output
         else:
             return sequence_output, pooled_output
+
+
+class FNetForSequenceClassification(FNetPreTrainedModel):
+    def __init__(self, fnet, num_classes=2, dropout=None):
+        super().__init__()
+        self.num_labels = num_classes
+        self.fnet = fnet
+
+        self.dropout = nn.Dropout(dropout if dropout is not None else self.fnet.
+                                  config["hidden_dropout_prob"])
+        self.classifier = nn.Linear(self.fnet.config["hidden_size"],
+                                    num_classes)
+        self.apply(self.init_weights)
+
+    def forward(self, input_ids, token_type_ids=None, position_ids=None):
+        r"""
+            The FNetForSequenceClassification forward method, overrides the __call__() special method.
+
+            Args:
+                input_ids (Tensor):
+                    See :class:`FNetModel`.
+                token_type_ids (Tensor, optional):
+                    See :class:`FNetModel`.
+                position_ids(Tensor, optional):
+                    See :class:`FNetModel`.
+
+            Returns:
+                Tensor: Returns tensor `logits`, a tensor of the input text classification logits.
+                Shape as `[batch_size, num_classes]` and dtype as float32.
+
+            Example:
+                .. code-block::
+
+                    import paddle
+                    from paddlenlp.transformers.FNet.modeling import FNetForSequenceClassification
+                    from paddlenlp.transformers.FNet.tokenizer import FNetTokenizer
+
+                    tokenizer = FNetTokenizer.from_pretrained('fnet-base')
+                    model = FNetForSequenceClassification.from_pretrained('fnet-base', num_classes=2)
+
+                    inputs = tokenizer("Welcome to use PaddlePaddle and PaddleNLP!")
+                    inputs = {k:paddle.to_tensor([v]) for (k, v) in inputs.items()}
+
+                    logits = model(**inputs)
+                    print(logits.shape)
+                    # [1, 2]
+
+            """
+
+        _, pooled_output = self.FNet(input_ids,
+                                     token_type_ids=token_type_ids,
+                                     position_ids=position_ids)
+
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+        return logits
