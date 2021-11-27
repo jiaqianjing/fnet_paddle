@@ -276,21 +276,31 @@ class FNetLayer(nn.Layer):
         fourier_output = self_fourier_outputs[0]
         intermediate_output = self.intermediate(fourier_output)
         layer_output = self.output(intermediate_output, fourier_output)
-        outputs = (layer_output, )
-        return outputs
+        return layer_output
 
 
 class FNetEncoder(nn.Layer):
-    def __init__(self, encoder_layer, num_layers):
+    def __init__(self, encoder_layer, num_layers, norm=None):
         super().__init__()
-        self.layer = nn.LayerList([
+        self.layers = nn.LayerList([
             (encoder_layer if i == 0 else type(encoder_layer)(
                 **encoder_layer._config)) for i in range(num_layers)
         ])
         self.num_layers = num_layers
+        self.norm = norm
 
-    def forward(self, *inputs, **kwargs):
-        return super().forward(*inputs, **kwargs)
+    def forward(self, src, cache=None):
+        output = src
+        new_caches = []
+        for i, mod in enumerate(self.layers):
+            if cache is None:
+                output = mod(output)
+            else:
+                output, new_cache = mod(output, cache=cache[i])
+                new_caches.append(new_cache)
+        if self.norm is not None:
+            output = self.norm(output)
+        return output if cache is None else (output, new_caches)
 
 
 class FNetPooler(nn.Layer):
@@ -342,5 +352,35 @@ class FNetModel(FNetPreTrainedModel):
         self.encoder = FNetEncoder(encoder_layer, num_hidden_layers)
         self.pooler = FNetPooler(hidden_size) if add_pooling_layer else None
 
-    def forward(self, *inputs, **kwargs):
-        return super().forward(*inputs, **kwargs)
+    def forward(self,
+                input_ids,
+                token_type_ids=None,
+                position_ids=None,
+                inputs_embeds=None,
+                output_hidden_states=False):
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError(
+                "You cannot specify both input_ids and inputs_embeds at the same time"
+            )
+
+        embedding_output = self.embeddings(input_ids=input_ids,
+                                           position_ids=position_ids,
+                                           token_type_ids=token_type_ids,
+                                           inputs_embeds=inputs_embeds)
+
+        if output_hidden_states:
+            output = embedding_output
+            encoder_outputs = []
+            for mod in self.encoder.layers:
+                output = mod(output)
+                encoder_outputs.append(output)
+            if self.encoder.norm is not None:
+                encoder_outputs[-1] = self.encoder.norm(encoder_outputs[-1])
+            pooled_output = self.pooler(encoder_outputs[-1])
+        else:
+            sequence_output = self.encoder(embedding_output)
+            pooled_output = self.pooler(sequence_output)
+        if output_hidden_states:
+            return encoder_outputs, pooled_output
+        else:
+            return sequence_output, pooled_output
