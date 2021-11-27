@@ -1,1 +1,0 @@
-{"do_lower_case": false, "sentencepiece_model_file": "/root/.paddlenlp/models/t5-small/spiece.model", "init_class": "T5Tokenizer"}

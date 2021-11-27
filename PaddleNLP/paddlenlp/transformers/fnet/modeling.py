@@ -100,7 +100,7 @@ class FNetPreTrainedModel(PretrainedModel):
             "bos_token_id": 1,
             "eos_token_id": 2
         },
-        "t5-large": {
+        "fnet-large": {
             "vocab_size": 32000,
             "hidden_size": 1024,
             "num_hidden_layers": 24,
