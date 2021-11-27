@@ -14,11 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import math
+from functools import partial
+from typing import ForwardRef
 
 import numpy as np
 import paddle
-
 import paddle.nn as nn
 import paddle.nn.functional as F
 
@@ -180,7 +182,7 @@ class FNetEmbeddings(nn.Layer):
 
             position_ids = seq_length - ones
             position_ids.stop_gradient = True
-        
+
         if token_type_ids is None:
             token_type_ids = paddle.zeros_like(input_ids, dtype="int64")
 
@@ -189,24 +191,122 @@ class FNetEmbeddings(nn.Layer):
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
         position_embeddings = self.position_embeddings(position_ids)
-        
+
         embeddings = inputs_embeds + token_type_embeddings + position_embeddings
         embeddings = self.layer_norm(embeddings)
         embeddings = self.projection(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
 
+
 class FNetIntermediate(nn.Layer):
-    pass
+    def __init__(self, hidden_size, intermediate_size, hidden_act):
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, intermediate_size)
+        if isinstance(hidden_act, str):
+            self.intermediate_act_fn = ACT2FN[hidden_act]
+        else:
+            self.intermediate_act_fn = hidden_act
+
+    def forward(self, hidden_states):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        return hidden_states
+
+
+class FNetBasicOutput(nn.Module):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(hidden_size)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.layer_norm(input_tensor + hidden_states)
+        return hidden_states
+
+
 class FNetBasicFourierTransform(nn.Layer):
-    pass
+    def __init__(self):
+        super().__init__()
+        self.fourier_transform = partial(paddle.fft.fftn, axes=(1, 2))
+
+    def forward(self, hidden_states):
+        outputs = self.fourier_transform(hidden_states).real()
+        return (outputs, )
+
+
 class FNetFourierTransform(nn.Layer):
-    pass
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.self = FNetBasicFourierTransform()
+        self.output = FNetBasicOutput(hidden_size)
+
+    def forward(self, hidden_states):
+        self_outputs = self.self(hidden_states)
+        fourier_output = self.output(self_outputs[0], hidden_states)
+        outputs = (fourier_output, )
+        return outputs
+
+
+class FNetOutput(nn.Layer):
+    def __init__(self, intermediate_size, hidden_size, hidden_dropout_prob):
+        super().__init__()
+        self.dense = nn.Linear(intermediate_size, hidden_size)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(hidden_dropout_prob)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
+
 class FNetLayer(nn.Layer):
-    pass
+    def __init__(self, hidden_size, intermediate_size, hidden_act,
+                 hidden_dropout_prob):
+        super().__init__()
+        self.fourier = FNetFourierTransform(hidden_size)
+        self.intermediate = FNetIntermediate(hidden_size, intermediate_size,
+                                             hidden_act)
+        self.output = FNetOutput(intermediate_size, hidden_size,
+                                 hidden_dropout_prob)
+
+    def forward(self, hidden_states):
+        self_fourier_outputs = self.fourier(hidden_states)
+        fourier_output = self_fourier_outputs[0]
+        intermediate_output = self.intermediate(fourier_output)
+        layer_output = self.output(intermediate_output, fourier_output)
+        outputs = (layer_output, )
+        return outputs
+
 
 class FNetEncoder(nn.Layer):
-    pass
+    def __init__(self, encoder_layer, num_layers):
+        super().__init__()
+        self.layer = nn.LayerList([
+            (encoder_layer if i == 0 else type(encoder_layer)(
+                **encoder_layer._config)) for i in range(num_layers)
+        ])
+        self.num_layers = num_layers
+
+    def forward(self, *inputs, **kwargs):
+        return super().forward(*inputs, **kwargs)
+
+
+class FNetPooler(nn.Layer):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.dense = nn.Linear(hidden_size, hidden_size)
+        self.activation = nn.Tanh()
+
+    def forward(self, hidden_states):
+        # We "pool" the model by simply taking the hidden state corresponding
+        # to the first token.
+        first_token_tensor = hidden_states[:, 0]
+        pooled_output = self.dense(first_token_tensor)
+        pooled_output = self.activation(pooled_output)
+        return pooled_output
+
 
 @register_base_model
 class FNetModel(FNetPreTrainedModel):
@@ -236,3 +336,11 @@ class FNetModel(FNetPreTrainedModel):
                                          hidden_dropout_prob,
                                          max_position_embeddings,
                                          type_vocab_size)
+
+        encoder_layer = FNetLayer(hidden_size, intermediate_size, hidden_act,
+                                  hidden_dropout_prob)
+        self.encoder = FNetEncoder(encoder_layer, num_hidden_layers)
+        self.pooler = FNetPooler(hidden_size) if add_pooling_layer else None
+
+    def forward(self, *inputs, **kwargs):
+        return super().forward(*inputs, **kwargs)
