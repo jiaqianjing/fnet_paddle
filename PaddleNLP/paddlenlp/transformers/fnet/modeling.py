@@ -119,9 +119,9 @@ class FNetPreTrainedModel(PretrainedModel):
     resource_files_names = {"model_state": "model_state.pdparams"}
     pretrained_resource_files_map = {
         "model_state": {
-            "t5-base":
+            "fnet-base":
             "https://paddlenlp.bj.bcebos.com/models/transformers/fnet/fnet-base/model_state.pdparams",
-            "t5-large":
+            "fnet-large":
             "https://paddlenlp.bj.bcebos.com/models/transformers/fnet/fnet-large/model_state.pdparams",
         }
     }
